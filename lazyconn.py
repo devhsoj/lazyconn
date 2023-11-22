@@ -6,7 +6,13 @@ import json
 import sys
 
 
-def load_config():
+def get_lazyconn_config() -> (dict | None):
+
+    '''
+    Tries to read ~/.ssh/lazyconn.json, if the file exists, returns a dict from JSON parsing.
+    If not, returns None.
+    '''
+
     config = None
     config_path = os.path.expanduser(f'~/.ssh/lazyconn.json')
 
@@ -18,7 +24,12 @@ def load_config():
     return config
 
 
-def get_cli_command_output(args, env=None, quiet=False):
+def get_cli_command_output(args: list[str], env=None, quiet=False):
+
+    '''
+    Helper method for getting the utf-8 decoded output of a shell command.
+    '''
+
     result = subprocess.run(args, capture_output=True, env=env)
 
     if result.returncode != 0:
@@ -30,6 +41,11 @@ def get_cli_command_output(args, env=None, quiet=False):
 
 
 def get_aws_cli_version():
+
+    '''
+    Returns a dictionary holding metadata of the installed AWS CLI version.
+    '''
+
     output = get_cli_command_output(['aws', '--version']).strip()
 
     metadata = output.split(' ')
@@ -43,14 +59,28 @@ def get_aws_cli_version():
     }
 
 
-def get_instance_data(region):
+def get_best_region(given_region: str | None):
+
+    '''
+    Returns the best region based on what is given and what the AWS CLI has configured.
+    '''
+
     aws_cli_region = get_cli_command_output(['aws', 'configure', 'get', 'region'], quiet=True).strip()
 
-    if region is None:
+    if given_region is None:
         if aws_cli_region == 'None' or aws_cli_region == '':
-            region = 'us-east-1'
+            given_region = 'us-east-1'
         else:
-            region = aws_cli_region
+            given_region = aws_cli_region
+
+    return given_region
+
+
+def get_instance_data(region: str):
+
+    '''
+    Returns JSON parsed AWS EC2 instance data from the AWS CLI.
+    '''
 
     aws_cli_version = get_aws_cli_version()
 
@@ -70,44 +100,51 @@ def get_instance_data(region):
     return instance_data
 
 
-def get_available_instances(instance_data):
-    available_instances = []
+def get_running_instances(instance_data):
+
+    '''
+    Returns list of all running instances evaluated from instance_data.
+    '''
+
+    running_instances = []
 
     for instance_batch in instance_data['Reservations']:
         for i in range(0, len(instance_batch['Instances'])):
             instance = instance_batch['Instances'][i]
 
-            if instance['State']['Code'] != 80 and 'PublicIpAddress' in instance:
-                tags = instance['Tags']
-                nameTags = [tag for tag in tags if tag['Key'] == 'Name']
+            # 16 = running
+            if instance['State']['Code'] == 16 and 'PublicIpAddress' in instance:
+                running_instances.append(instance)
 
-                available_instances.append([
-                    i + 1,
-                    instance['InstanceId'],
-                    nameTags[0]['Value'] or 'N/A',
-                    f'({instance["PlatformDetails"]}) {instance["InstanceType"]}',
-                    instance['PublicIpAddress'],
-                    instance['KeyName'] + '.pem'
-                ])
-
-    return available_instances
+    return running_instances
 
 
-def match_instance(formatted_instances, pattern, config):
+def match_instance_name_to_config(formatted_instances, pattern: str, config: dict):
+
+    '''
+    Tries to match a string pattern to the name of each instance in formatted_instances, if
+    a match is found, then return the configured user along with the matched instance.
+    '''
+
     instance = None
     user = None
 
     for instance_ in formatted_instances:
         if pattern != None:
-            if pattern in instance_[2] or pattern == instance_[2]:
+            tags = instance_['Tags']
+            name_tags = [tag for tag in tags if tag['Key'] == 'Name']
+
+            instance_name = name_tags[0]['Value'] or ''
+
+            if instance_name and (pattern in instance_name or pattern == instance_name):
                 if config != None:
                     if 'match' in config:
                         if 'name' in config['match']:
                             for name_match in config['match']['name']:
-                                if name_match['contains'] in instance_[2]:
+                                if name_match['contains'] in instance_name:
                                     user = name_match['user']
 
-                                    if pattern in instance_[2]:
+                                    if pattern in instance_name:
                                         instance = instance_
                                         break
 
@@ -116,55 +153,82 @@ def match_instance(formatted_instances, pattern, config):
     return (instance, user)
 
 
+def tabulate_running_instance_data(running_instances: list):
+
+    '''
+    Returns a list of instances in a tabulated data format for the package tabulate.
+    '''
+
+    table_data = []
+
+    for i in range(0, len(running_instances)):
+        instance = running_instances[i]
+
+        tags = instance['Tags']
+        name_tags = [tag for tag in tags if tag['Key'] == 'Name']
+
+        table_data.append([
+            i + 1,
+            instance['InstanceId'],
+            name_tags[0]['Value'] or 'N/A',
+            f'({instance["PlatformDetails"]}) {instance["InstanceType"]}',
+            instance['PublicIpAddress'],
+            instance['KeyName'] + '.pem'
+        ])
+
+    return table_data
+
+
 def main():
-    parser = argparse.ArgumentParser(prog='lazyconn', description='Connect to any AWS EC2 instance with ease!')
+    parser = argparse.ArgumentParser(prog='lazyconn', description='A tool that allows you to lazily connect to any of your AWS EC2 instances! ')
 
     parser.add_argument('-r', '--region', help='AWS region to read instances from.', default=None)
     parser.add_argument('-u', '--user', help='Default user to login as.', default=None)
-    parser.add_argument('-m', '--match', help='Pattern to matches a EC2 instance name to connection options specified in ~/.ssh/lazyconn.json.', default=None)
+    parser.add_argument('-m', '--match', help='Pattern to match an EC2 instance name against to connection options specified in ~/.ssh/lazyconn.json.', default=None)
 
     args = parser.parse_args()
 
-    instance_data = get_instance_data(args.region)
-    available_instances = get_available_instances(instance_data)
+    region = get_best_region(args.region)
+    instance_data = get_instance_data(region)
+    running_instances = get_running_instances(instance_data)
     
-    if len(available_instances) == 0:
-        print(f'error: no available instances!')
+    if len(running_instances) == 0:
+        print(f'error: no running instances found in {region}!')
         sys.exit(1)
 
-    config = load_config()
+    config = get_lazyconn_config()
     running = True
 
     while running:
         instance, user = None, None
 
         if args.match != None:
-            instance, user = match_instance(available_instances, args.match, config)
+            instance, user = match_instance_name_to_config(running_instances, args.match, config)
 
         if args.match == None or instance == None:
-            print(tabulate(available_instances, ['#', 'ID', 'Name', 'Type', 'IP Address', 'Key'], tablefmt="simple_grid"))
+            print(tabulate(tabulate_running_instance_data(running_instances), ['#', 'ID', 'Name', 'Type', 'IP Address', 'Key'], tablefmt="simple_grid"))
 
         while not instance:
             try:
-                choice = input(f'\r\nselect instance (#1-#{len(available_instances)})> ')
+                choice = input(f'\r\nselect instance (#1-#{len(running_instances)})> ')
                 index = int(choice.replace('#', '')) - 1
 
-                if index < 0 or index > len(available_instances):
+                if index < 0 or index > len(running_instances):
                     raise IndexError
 
-                instance = available_instances[index]
+                instance = running_instances[index]
             except (ValueError, IndexError):
                 print(f'error: "{choice}" is an invalid choice!')
                 choice = None
 
         user = (user or args.user or input('user> ')).strip()
-        key_path = os.path.expanduser(f'~/.ssh/{instance[5]}')
+        key_path = os.path.expanduser(f'~/.ssh/{instance["KeyName"]}.pem')
 
         if not os.path.isfile(key_path):
-            print(f'error: key file "{instance[5]}" not found in ~/.ssh/')
+            print(f'error: key file "{instance["KeyName"]}.pem" not found in ~/.ssh/')
             sys.exit(1)
 
-        ssh_args = ['ssh', '-i', key_path, f'{user}@{instance[4]}']
+        ssh_args = ['ssh', '-i', key_path, f'{user}@{instance["PublicIpAddress"]}']
 
         '''
         if running from a Docker container:

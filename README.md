@@ -1,6 +1,6 @@
 # lazyconn
 
-A python tool that allows you to lazily connect to any of your AWS EC2 instances!
+A tool that allows you to lazily connect to any of your AWS EC2 instances!
 
 **Why use lazyconn?**
  1. You won't have to remember IP Addresses.
