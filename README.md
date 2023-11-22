@@ -1,8 +1,52 @@
 # lazyconn
 
-A python tool that allows you to lazily connect to an EC2 instance
+A python tool that allows you to lazily connect to any of your AWS EC2 instances!
 
-## Installation
+**Why use lazyconn?**
+ 1. You won't have to remember IP Addresses.
+ 2. Faster & easier to connect to instances w/ dynamic IP Addresses.
+ 3. With a proper lazyconn config, you won't have to remember usernames.
+ 4. You won't have to remember which key files go to which instances.
+ 5. Nice TUI that shows you what you need to know about an instance before connecting.
+ 6. Allows you to easily bounce between instances.
+
+## Installation With Docker
+
+**Requirements**: [Docker](https://www.docker.com/get-started/)
+
+Cloning the repo:
+```bash
+git clone https://github.com/brokerage-systems/lazyconn.git
+cd lazyconn/
+```
+
+Building with Docker
+```bash
+docker build --build-arg AWS_ACCESS_KEY_ID=XXXXXXXXXXXXXXXXXXXX --build-arg AWS_SECRET_ACCESS_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX -t lazyconn .
+```
+
+## Example Usage With Docker
+
+**Note:** We attach a docker volume to our .ssh/ directory so lazyconn can read our key files & lazyconn config!
+```bash
+docker run -i --rm -v /home/josh/.ssh/:/root/.ssh/ lazyconn --help
+```
+
+**Specifying a region:**
+lazyconn will automatically use the aws cli configured region and if that isn't configured **and** no region parameter is passed, it will default to us-east-1!
+```bash
+docker run -i --rm -v /home/josh/.ssh/:/root/.ssh/ lazyconn -r us-east-1
+```
+
+**Specifying a user:**
+if nothing is specified, there will be a prompt to enter the username
+```bash
+docker run -i --rm -v /home/josh/.ssh/:/root/.ssh/ lazyconn -u ec2-user
+```
+
+---
+
+### Installation Without Docker
 
 **Requirements**: [Python 3](https://www.python.org/downloads/release/python-3113/) | [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
 
@@ -19,27 +63,29 @@ cd lazyconn/
 pip install -r requirements.txt
 ```
 
-## Usage
+---
 
-```python
-python lazyconn.py --help
+### Example Usage Without Docker
+
+```bash
+python3 lazyconn.py --help
 ```
 
 **Specifying a region:**
 lazyconn will automatically use the aws cli configured region and if that isn't configured **and** no region parameter is passed, it will default to us-east-1!
-```python
-python lazyconn.py -r us-west-2
+```bash
+python3 lazyconn.py -r us-west-2
 ```
 
 **Specifying a user:**
 if nothing is specified, there will be a prompt to enter the username
-```python
-python lazyconn.py -u ec2-user
+```bash
+python3 lazyconn.py -u ec2-user
 ```
 
-### Getting even lazier!
-**Creating a config: (~/.ssh/lazyconn.json)**
-lazyconn will read this config, loop through all available instances, match the name, then use the configured options to connect to the instance.
+## Getting even lazier!
+**Create a config file @ ~/.ssh/lazyconn.json**
+then lazyconn will read this config, loop through all available instances, match the name, then use the configured options to connect to the instance.
 ```json
 {
     "match": {
@@ -57,7 +103,9 @@ lazyconn will read this config, loop through all available instances, match the 
 }
 ```
 
-#### Match Example
+---
+
+### Match Example
 
 **Instance List:**
 ```txt
@@ -70,13 +118,26 @@ lazyconn will read this config, loop through all available instances, match the 
 └─────┴─────────────────────┴────────────────────────┴──────────────────────────┴────────────────┴─────────┘
 ```
 
+---
+
 **Pattern example #1**
 This will connect to the "ECS Instance - Website" instance with the user "ec2-user" automatically.
-```python
-python lazyconn.py -m "Website"
+```bash
+python3 lazyconn.py -m "Website"
 ```
+or
+```bash
+docker run -i --rm -v /home/josh/.ssh/:/root/.ssh/ lazyconn -m "Website"
+```
+
+---
+
 **Pattern example #2**
 This will connect to the "App Server" instance with the user "ubuntu" automatically.
-```python
-python lazyconn.py -m "App"
+```bash
+python3 lazyconn.py -m "App"
+```
+or
+```bash
+docker run -i --rm -v /home/josh/.ssh/:/root/.ssh/ lazyconn -m "App"
 ```

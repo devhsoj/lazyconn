@@ -23,7 +23,7 @@ def get_cli_command_output(args, env=None, quiet=False):
 
     if result.returncode != 0:
         if not quiet:
-            print(f'aws cli command failed to run: "{result.stderr}"')
+            print(f'command failed to run: "{result.stderr}"')
             sys.exit(result.returncode)
 
     return result.stdout.decode('utf-8')
@@ -57,8 +57,10 @@ def get_instance_data(region):
     aws_cli_ec2_args = ['aws', 'ec2', 'describe-instances', '--output', 'json', '--region', region]
     aws_cli_ec2_env = os.environ.copy()
 
+    # disable output paging in older AWS CLI versions
     aws_cli_ec2_env['AWS_PAGER'] = ''
 
+    # this parameter only exists in the AWS CLI V2
     if aws_cli_version['major'] == 2:
         aws_cli_ec2_args.append('--no-cli-pager')
 
@@ -117,9 +119,9 @@ def match_instance(formatted_instances, pattern, config):
 def main():
     parser = argparse.ArgumentParser(prog='lazyconn', description='Connect to any AWS EC2 instance with ease!')
 
-    parser.add_argument('-r', '--region', help='AWS region to read instances from', default=None)
-    parser.add_argument('-u', '--user', help='Default user to connect as', default=None)
-    parser.add_argument('-m', '--match', help='Matches the EC2 instance name to connection options specified in ~/.ssh/lazyconn.json', default=None)
+    parser.add_argument('-r', '--region', help='AWS region to read instances from.', default=None)
+    parser.add_argument('-u', '--user', help='Default user to login as.', default=None)
+    parser.add_argument('-m', '--match', help='Pattern to matches a EC2 instance name to connection options specified in ~/.ssh/lazyconn.json.', default=None)
 
     args = parser.parse_args()
 
@@ -152,18 +154,37 @@ def main():
 
                 instance = available_instances[index]
             except (ValueError, IndexError):
-                print(f'error: \'{choice}\' is an invalid choice!')
+                print(f'error: "{choice}" is an invalid choice!')
                 choice = None
 
-        user = user or args.user or input('user> ')
+        user = (user or args.user or input('user> ')).strip()
         key_path = os.path.expanduser(f'~/.ssh/{instance[5]}')
 
         if not os.path.isfile(key_path):
-            print(f'error: key file {instance[5]} not found in ~/.ssh/')
+            print(f'error: key file "{instance[5]}" not found in ~/.ssh/')
             sys.exit(1)
 
-        ssh_result = subprocess.run(['ssh', '-i', key_path, f'{user}@{instance[4]}'])
+        ssh_args = ['ssh', '-i', key_path, f'{user}@{instance[4]}']
 
+        '''
+        if running from a Docker container:
+            - force tty allocation
+            - disable StrictHostKeyChecking
+            - ignore host config files (could be attached via docker volume)
+        '''
+
+        if os.getenv('IS_CONTAINER') == 'true':
+            ssh_args.extend([
+                '-tt',
+                '-o',
+                'StrictHostKeyChecking=no',
+                '-F',
+                'none'
+            ])
+
+        ssh_result = subprocess.run(ssh_args)
+
+        # if the ssh process has ended and we specified a match parameter, then stop execution
         if args.match != None:
             running = False
 
@@ -175,6 +196,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
         print('exiting...')
         sys.exit(1)
