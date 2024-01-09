@@ -3,12 +3,13 @@
 A tool that allows you to lazily connect to any of your AWS EC2 instances!
 
 **Why use lazyconn?**
- 1. You won't have to remember IP Addresses.
- 2. Faster & easier to connect to instances w/ dynamic IP Addresses.
- 3. With a proper lazyconn config, you won't have to remember usernames.
- 4. You won't have to remember which key files go to which instances.
- 5. Nice TUI that shows you what you need to know about an instance before connecting.
- 6. Allows you to easily bounce between instances.
+ 1. No more manually managing ssh config files.
+ 2. You won't have to remember IP Addresses.
+ 3. Faster & easier to connect to instances w/ dynamic IP Addresses.
+ 4. With a proper lazyconn config, you won't have to remember usernames.
+ 5. You won't have to remember which key files go to which instances.
+ 6. Nice TUI that shows you what you need to know about an instance before connecting.
+ 7. Allows you to easily bounce between instances.
 
 ## Installation With Docker
 
